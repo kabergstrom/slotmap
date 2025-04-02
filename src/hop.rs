@@ -529,6 +529,9 @@ impl<K: Key, V> HopSlotMap<K, V> {
             let occupied_version = key.version;
 
             let mut cur = unsafe { self.slots.get_unchecked(0).u.free.other_end as usize };
+            if cur == 0 {
+                cur = unsafe { self.slots.get_unchecked(0).u.free.next as usize };
+            }
             while cur != 0 {
                 let mut end_of_vacant_block = match unsafe { self.slots.get_unchecked(cur).get() } {
                     Occupied(_) => {
