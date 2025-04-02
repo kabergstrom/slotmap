@@ -526,14 +526,11 @@ impl<K: Key, V> HopSlotMap<K, V> {
         // map freelist.
         unsafe {
             assert!(!self.slots.get_unchecked(idx).occupied());
-            // We have a contiguous block of vacant slots starting at head.
-            // Put our new element at the back slot.
-            // Compute value first in case f panics or returns an error.
             let occupied_version = key.version;
 
             let mut cur = unsafe { self.slots.get_unchecked(0).u.free.other_end as usize };
             while cur != 0 {
-                let end_of_vacant_block = match unsafe { self.slots.get_unchecked(cur).get() } {
+                let mut end_of_vacant_block = match unsafe { self.slots.get_unchecked(cur).get() } {
                     Occupied(_) => {
                         panic!(
                             "Should never end up on an occupied slot when traversing the free list"
@@ -541,6 +538,10 @@ impl<K: Key, V> HopSlotMap<K, V> {
                     }
                     Vacant(free) => free.other_end as usize,
                 };
+                if end_of_vacant_block < cur {
+                    core::mem::swap(&mut cur, &mut end_of_vacant_block);
+                    assert!(idx <= end_of_vacant_block);
+                }
                 if idx <= end_of_vacant_block {
                     let left_vacant = !self.slots.get_unchecked(idx - 1).occupied();
                     let right_vacant = self.slots.get(idx + 1).map_or(false, |s| !s.occupied());
