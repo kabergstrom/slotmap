@@ -30,21 +30,26 @@ use crate::{DefaultKey, Key, KeyData};
 
 // Metadata to maintain the freelist.
 #[derive(Clone, Copy, Debug)]
-struct FreeListEntry {
-    next: u32,
-    prev: u32,
-    other_end: u32,
+#[doc(hidden)]
+#[allow(missing_debug_implementations)]
+pub struct FreeListEntry {
+    pub next: u32,
+    pub prev: u32,
+    pub other_end: u32,
 }
 
 // Storage inside a slot or metadata for the freelist when vacant.
-union SlotUnion<T> {
-    value: ManuallyDrop<T>,
-    free: FreeListEntry,
+#[doc(hidden)]
+#[allow(missing_debug_implementations)]
+pub union SlotUnion<T> {
+    pub value: ManuallyDrop<T>,
+    pub free: FreeListEntry,
 }
 
 // A slot, which represents storage for a value and a current version.
 // Can be occupied or vacant.
-struct Slot<T> {
+#[doc(hidden)]
+pub struct Slot<T> {
     u: SlotUnion<T>,
     version: u32, // Even = vacant, odd = occupied.
 }
@@ -488,10 +493,132 @@ impl<K: Key, V> HopSlotMap<K, V> {
         }
     }
 
+    #[doc(hidden)]
+    pub fn insert_at_key(&mut self, key: K, value: V) {
+        let key = <K as Key>::data(&key);
+        let idx = key.idx as usize;
+        assert!(idx >= self.capacity(), "inserting beyond capacity");
+        // make sure we've initialized slots up to idx
+        for i in self.slots.len()..(idx + 1) {
+            self.slots.push(Slot {
+                u: SlotUnion {
+                    free: FreeListEntry {
+                        next: 0,
+                        prev: 0,
+                        other_end: 0,
+                    },
+                },
+                version: 0,
+            });
+            unsafe {
+                let left_vacant = !self.slots.get_unchecked(i.saturating_sub(1)).occupied();
+                self.add_to_freelist(left_vacant, false, i as u32);
+            }
+        }
+
+        // In case f panics, we don't make any changes until we have the value.
+        let new_num_elems = self.num_elems + 1;
+        if new_num_elems == core::u32::MAX {
+            panic!("HopSlotMap number of elements overflow");
+        }
+
+        // All unsafe accesses here are safe due to the invariants of the slot
+        // map freelist.
+        unsafe {
+            assert!(!self.slots.get_unchecked(idx).occupied());
+            // We have a contiguous block of vacant slots starting at head.
+            // Put our new element at the back slot.
+            // Compute value first in case f panics or returns an error.
+            let occupied_version = key.version;
+
+            let mut cur = unsafe { self.slots.get_unchecked(0).u.free.other_end as usize };
+            while cur != 0 {
+                let end_of_vacant_block = match unsafe { self.slots.get_unchecked(cur).get() } {
+                    Occupied(_) => {
+                        panic!(
+                            "Should never end up on an occupied slot when traversing the free list"
+                        );
+                    }
+                    Vacant(free) => free.other_end as usize,
+                };
+                if idx <= end_of_vacant_block {
+                    let left_vacant = !self.slots.get_unchecked(idx - 1).occupied();
+                    let right_vacant = self.slots.get(idx + 1).map_or(false, |s| !s.occupied());
+                    let idx = idx as u32;
+                    match (left_vacant, right_vacant) {
+                        (true, true) => {
+                            // vxv -- Left side is vacant, right is vacant.
+                            // This used to be inside a vacant block, so we need to split the vacant block.
+                            // cur could be the root node, but that's fine
+                            let cur = cur as u32;
+                            let left = idx - 1;
+                            let right = idx + 1;
+                            // Update the first entry of the block to the right of us to point to the other_end and to the block to the left of us
+                            self.freelist(right).next = self.freelist(cur).next;
+                            self.freelist(right).other_end = self.freelist(cur).other_end;
+                            self.freelist(right).prev = cur;
+                            // Update the last entry of the block to the left of us to point to the new block to the right of us
+                            self.freelist(left).next = right;
+                            self.freelist(left).other_end = cur;
+                            self.freelist(left).prev = self.freelist(cur).prev;
+                            // update the start of the left vacant block to point to the right
+                            self.freelist(cur).next = right;
+                            self.freelist(cur).other_end = left;
+                            // update the end of the right vacant block to point to the left one
+                            self.freelist(end_of_vacant_block as u32).other_end = right;
+                            self.freelist(end_of_vacant_block as u32).prev = cur;
+                        }
+                        (true, false) => {
+                            // vxo -- Left side is vacant, right is occupied
+                            // This used to be the end of the vacant block, now the left one is the end of the vacant block
+                            let left = idx - 1; // we could end up at the root node of 0 here
+                            let other_end = self.freelist(idx).other_end;
+                            self.freelist(other_end).other_end = left;
+                            self.freelist(left).other_end = other_end;
+                            self.freelist(left).next = self.freelist(idx).next;
+                            self.freelist(left).prev = self.freelist(idx).prev;
+                        }
+                        (false, true) => {
+                            // oxv -- Left side is occupied, right is vacant.
+                            // This used to be the start of the vacant block, now the next one is the start of the vacant block
+                            // Need to increment the prev's next pointer by one, and set the other_end of the next one
+                            let other_end = self.freelist(idx).other_end;
+                            let prev = self.freelist(idx).prev;
+                            self.freelist(prev).next = idx + 1;
+                            self.freelist(idx + 1).other_end = other_end;
+                            self.freelist(idx + 1).prev = prev;
+                            self.freelist(idx + 1).next = self.freelist(idx).next;
+                        }
+                        (false, false) => {
+                            // oxo -- Both sides are occupied, update prev vacant block to point to next vacant block
+                            // No need to update other_end since this block is disappearing
+                            assert!(self.freelist(idx).other_end == idx);
+                            let prev = self.freelist(idx).prev;
+                            let next = self.freelist(idx).next;
+                            self.freelist(prev).next = next;
+                            self.freelist(next).prev = prev;
+                        }
+                    }
+
+                    // And finally insert the value.
+                    let slot = &mut self.slots[idx as usize];
+                    slot.version = occupied_version.get();
+                    slot.u.value = ManuallyDrop::new(value);
+                    self.num_elems = new_num_elems;
+                    break;
+                } else {
+                    cur = self.freelist(end_of_vacant_block as u32).next as usize;
+                }
+            }
+            assert!(false, "should never get here");
+        }
+    }
+
     // Helper function to remove a value from a slot. Safe iff the slot is
     // occupied. Returns the value removed.
     #[inline(always)]
-    unsafe fn remove_from_slot(&mut self, idx: usize) -> V {
+    #[doc(hidden)]
+    pub unsafe fn remove_from_slot(&mut self, idx: usize) -> V {
         // Remove value from slot.
         let slot = self.slots.get_unchecked_mut(idx);
         slot.version = slot.version.wrapping_add(1);
@@ -506,6 +633,14 @@ impl<K: Key, V> HopSlotMap<K, V> {
         // contiguous block to the left or right, merging the two blocks to the
         // left and right or inserting a new block.
         let i = idx as u32;
+        self.add_to_freelist(left_vacant, right_vacant, i);
+
+        self.num_elems -= 1;
+
+        value
+    }
+
+    unsafe fn add_to_freelist(&mut self, left_vacant: bool, right_vacant: bool, i: u32) {
         match (left_vacant, right_vacant) {
             (false, false) => {
                 // New block, insert it at the tail.
@@ -551,10 +686,6 @@ impl<K: Key, V> HopSlotMap<K, V> {
                 self.freelist(back).other_end = front;
             }
         }
-
-        self.num_elems -= 1;
-
-        value
     }
 
     /// Removes a key from the slot map, returning the value at the key if the
