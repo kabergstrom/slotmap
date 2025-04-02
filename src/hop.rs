@@ -497,7 +497,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     pub fn insert_at_key(&mut self, key: K, value: V) {
         let key = <K as Key>::data(&key);
         let idx = key.idx as usize;
-        assert!(idx >= self.capacity(), "inserting beyond capacity");
+        assert!(idx < self.capacity(), "inserting beyond capacity");
         // make sure we've initialized slots up to idx
         for i in self.slots.len()..(idx + 1) {
             self.slots.push(Slot {
