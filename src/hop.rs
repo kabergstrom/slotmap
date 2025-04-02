@@ -606,7 +606,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                     slot.version = occupied_version.get();
                     slot.u.value = ManuallyDrop::new(value);
                     self.num_elems = new_num_elems;
-                    break;
+                    return;
                 } else {
                     cur = self.freelist(end_of_vacant_block as u32).next as usize;
                 }
