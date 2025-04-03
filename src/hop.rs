@@ -571,6 +571,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             // update the end of the right vacant block to point to the left one
                             self.freelist(end_of_vacant_block as u32).other_end = right;
                             self.freelist(end_of_vacant_block as u32).prev = cur;
+                            self.validate_freelist_invariants(idx);
                         }
                         (true, false) => {
                             // vxo -- Left side is vacant, right is occupied
@@ -581,6 +582,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             self.freelist(left).other_end = other_end;
                             self.freelist(left).next = self.freelist(idx).next;
                             self.freelist(left).prev = self.freelist(idx).prev;
+                            self.validate_freelist_invariants(idx);
                         }
                         (false, true) => {
                             // oxv -- Left side is occupied, right is vacant.
@@ -592,6 +594,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             self.freelist(idx + 1).other_end = other_end;
                             self.freelist(idx + 1).prev = prev;
                             self.freelist(idx + 1).next = self.freelist(idx).next;
+                            self.validate_freelist_invariants(idx);
                         }
                         (false, false) => {
                             // oxo -- Both sides are occupied, update prev vacant block to point to next vacant block
@@ -601,6 +604,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             let next = self.freelist(idx).next;
                             self.freelist(prev).next = next;
                             self.freelist(next).prev = prev;
+                            self.validate_freelist_invariants(idx);
                         }
                     }
 
@@ -690,6 +694,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                 self.freelist(back).other_end = front;
             }
         }
+        self.validate_freelist_invariants(i);
     }
 
     /// Removes a key from the slot map, returning the value at the key if the
@@ -1134,6 +1139,143 @@ impl<K: Key, V> HopSlotMap<K, V> {
     pub fn values_mut(&mut self) -> ValuesMut<K, V> {
         ValuesMut {
             inner: self.iter_mut(),
+        }
+    }
+    fn validate_freelist_invariants(&self, idx: u32) {
+        let mut iter = 0;
+        #[derive(Copy, Clone, Debug)]
+        struct Block {
+            start: usize,
+            end: usize,
+            next: usize,
+            prev: usize,
+            start_entry: FreeListEntry,
+            end_entry: FreeListEntry,
+        }
+        let mut blocks = Vec::new();
+        while iter < self.slots.len() {
+            let block_start = iter as u32;
+            if self.slots[iter].occupied() {
+                iter += 1;
+                continue;
+            }
+            while iter < self.slots.len() && !self.slots[iter].occupied() {
+                iter += 1;
+            }
+            let block_end = if iter as u32 != block_start {
+                (iter as u32).saturating_sub(1)
+            } else {
+                iter as u32
+            };
+            while iter < self.slots.len() && self.slots[iter].occupied() {
+                iter += 1;
+            }
+            let next = if iter == block_end as usize || iter >= self.slots.len() {
+                0
+            } else {
+                iter
+            };
+            let mut prev = if block_start == 0 {
+                (self.slots.len() - 1) as u32
+            } else {
+                block_start - 1
+            };
+            while prev > 0 && self.slots[prev as usize].occupied() {
+                prev -= 1;
+            }
+            if prev != 0 {
+                while prev > 0 && !self.slots[prev as usize].occupied() {
+                    prev -= 1;
+                }
+                if self.slots[prev as usize].occupied() {
+                    prev += 1;
+                }
+            }
+            unsafe {
+                blocks.push(Block {
+                    start: block_start as usize,
+                    end: block_end as usize,
+                    next,
+                    prev: prev as usize,
+                    start_entry: self.slots[block_start as usize].u.free,
+                    end_entry: self.slots[block_end as usize].u.free,
+                });
+            }
+        }
+        let mut ref_counts = std::collections::HashMap::new();
+
+        for block in &blocks {
+            let Block {
+                end: block_end,
+                start: block_start,
+                next,
+                prev,
+                ..
+            } = *block;
+            unsafe {
+                ref_counts
+                    .entry(self.slots[block_start].u.free.next)
+                    .and_modify(|v| *v += 1)
+                    .or_insert(1);
+                ref_counts
+                    .entry(self.slots[block_start].u.free.prev)
+                    .and_modify(|v| *v += 1)
+                    .or_insert(1);
+            }
+        }
+        for block in &blocks {
+            let Block {
+                end: block_end,
+                start: block_start,
+                next,
+                prev,
+                ..
+            } = *block;
+            assert_eq!(ref_counts[&(block_start as u32)], 2);
+            unsafe {
+                assert_eq!(
+                    block_end,
+                    self.slots[block_start as usize].u.free.other_end as usize,
+                    "block_start.other_end wrong, block_start {} block_end {} len {} idx {}",
+                    block_start,
+                    block_end,
+                    self.slots.len(),
+                    idx
+                );
+                assert_eq!(
+                    block_start,
+                    self.slots[block_end as usize].u.free.other_end as usize,
+                    "block_end.other_end wrong, block_start {} block_end {} len {} idx {}",
+                    block_start,
+                    block_end,
+                    self.slots.len(),
+                    idx
+                );
+                // assert_eq!(
+                //     next as u32,
+                //     self.slots[block_start as usize].u.free.next,
+                //     "block_end.next wrong, block_start {} block_end {} next {} prev {} len {} idx {} next occupied {} other_end for block_start {} other_end for next {} other_end for prev {} {:?}",
+                //     block_start,
+                //     block_end,
+                //     next, prev,
+                //     self.slots.len(),
+                //     idx,
+                //     self.slots[next].occupied(),
+                //     self.slots[block_start as usize].u.free.other_end,
+                //     self.slots[next as usize].u.free.other_end,
+                //     self.slots[prev as usize].u.free.other_end
+                //     ,blocks
+                // );
+                // assert_eq!(
+                //     prev,
+                //     self.slots[block_start as usize].u.free.prev as usize,
+                //     "block_start.prev wrong, block_start {} block_end {} len {} idx {}",
+                //     block_start,
+                //     block_end,
+                //     self.slots.len(),
+                //     idx
+                // );
+            }
         }
     }
 }
