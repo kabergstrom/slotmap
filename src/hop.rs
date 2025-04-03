@@ -571,7 +571,6 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             // update the end of the right vacant block to point to the left one
                             self.freelist(end_of_vacant_block as u32).other_end = right;
                             self.freelist(end_of_vacant_block as u32).prev = cur;
-                            self.validate_freelist_invariants(idx);
                         }
                         (true, false) => {
                             // vxo -- Left side is vacant, right is occupied
@@ -582,7 +581,6 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             self.freelist(left).other_end = other_end;
                             self.freelist(left).next = self.freelist(idx).next;
                             self.freelist(left).prev = self.freelist(idx).prev;
-                            self.validate_freelist_invariants(idx);
                         }
                         (false, true) => {
                             // oxv -- Left side is occupied, right is vacant.
@@ -594,7 +592,6 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             self.freelist(idx + 1).other_end = other_end;
                             self.freelist(idx + 1).prev = prev;
                             self.freelist(idx + 1).next = self.freelist(idx).next;
-                            self.validate_freelist_invariants(idx);
                         }
                         (false, false) => {
                             // oxo -- Both sides are occupied, update prev vacant block to point to next vacant block
@@ -604,7 +601,6 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             let next = self.freelist(idx).next;
                             self.freelist(prev).next = next;
                             self.freelist(next).prev = prev;
-                            self.validate_freelist_invariants(idx);
                         }
                     }
 
@@ -613,6 +609,12 @@ impl<K: Key, V> HopSlotMap<K, V> {
                     slot.version = occupied_version.get();
                     slot.u.value = ManuallyDrop::new(value);
                     self.num_elems = new_num_elems;
+
+                    println!(
+                        "idx {} left_vacant {} right_vacant {}",
+                        idx, left_vacant, right_vacant
+                    );
+                    self.validate_freelist_invariants(idx);
                     return;
                 } else {
                     cur = self.freelist(end_of_vacant_block as u32).next as usize;
