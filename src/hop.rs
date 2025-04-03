@@ -625,11 +625,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                     slot.u.value = ManuallyDrop::new(value);
                     self.num_elems = new_num_elems;
 
-                    println!(
-                        "idx {} left_vacant {} right_vacant {}",
-                        idx, left_vacant, right_vacant
-                    );
-                    self.validate_freelist_invariants(idx, left_vacant, right_vacant);
+                    // self.validate_freelist_invariants(idx, left_vacant, right_vacant);
                     return;
                 } else {
                     cur = self.freelist(cur as u32).next as usize;
@@ -711,7 +707,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                 self.freelist(back).other_end = front;
             }
         }
-        self.validate_freelist_invariants(i, left_vacant, right_vacant);
+        // self.validate_freelist_invariants(i, left_vacant, right_vacant);
     }
 
     /// Removes a key from the slot map, returning the value at the key if the
@@ -1294,10 +1290,6 @@ impl<K: Key, V> HopSlotMap<K, V> {
                 // );
             }
         }
-        println!(
-            "idx {} left_vacant {} right_vacant {}",
-            idx, left_vacant, right_vacant
-        );
     }
 }
 
