@@ -600,10 +600,12 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             // Need to increment the prev's next pointer by one, and set the other_end of the next one
                             let other_end = self.freelist(idx).other_end;
                             let prev = self.freelist(idx).prev;
+                            let next = self.freelist(idx).next;
                             self.freelist(prev).next = idx + 1;
+                            self.freelist(next).prev = idx + 1;
                             self.freelist(idx + 1).other_end = other_end;
                             self.freelist(idx + 1).prev = prev;
-                            self.freelist(idx + 1).next = self.freelist(idx).next;
+                            self.freelist(idx + 1).next = next;
                         }
                         (false, false) => {
                             // oxo -- Both sides are occupied, update prev vacant block to point to next vacant block
