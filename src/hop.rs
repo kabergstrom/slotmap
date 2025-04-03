@@ -494,6 +494,18 @@ impl<K: Key, V> HopSlotMap<K, V> {
     }
 
     #[doc(hidden)]
+    pub fn get_slot_version(&mut self, idx: u32) -> Option<u32> {
+        unsafe {
+            let slot = self.slots.get_unchecked(idx as usize);
+            if slot.occupied() {
+                Some(slot.version)
+            } else {
+                None
+            }
+        }
+    }
+
+    #[doc(hidden)]
     pub fn insert_at_key(&mut self, key: K, value: V) {
         let key = <K as Key>::data(&key);
         let idx = key.idx as usize;
