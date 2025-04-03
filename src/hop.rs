@@ -603,6 +603,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             let next = self.freelist(idx).next;
                             self.freelist(prev).next = idx + 1;
                             self.freelist(next).prev = idx + 1;
+                            self.freelist(other_end).other_end = idx + 1;
                             self.freelist(idx + 1).other_end = other_end;
                             self.freelist(idx + 1).prev = prev;
                             self.freelist(idx + 1).next = next;
