@@ -561,16 +561,13 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             self.freelist(right).next = self.freelist(cur).next;
                             self.freelist(right).other_end = self.freelist(cur).other_end;
                             self.freelist(right).prev = cur;
-                            // Update the last entry of the block to the left of us to point to the new block to the right of us
-                            self.freelist(left).next = right;
+                            // Update other_end of the left block
                             self.freelist(left).other_end = cur;
-                            self.freelist(left).prev = self.freelist(cur).prev;
                             // update the start of the left vacant block to point to the right
                             self.freelist(cur).next = right;
                             self.freelist(cur).other_end = left;
-                            // update the end of the right vacant block to point to the left one
+                            // update the other_end of the right vacant block to point to start of its block
                             self.freelist(end_of_vacant_block as u32).other_end = right;
-                            self.freelist(end_of_vacant_block as u32).prev = cur;
                         }
                         (true, false) => {
                             // vxo -- Left side is vacant, right is occupied
@@ -579,8 +576,6 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             let other_end = self.freelist(idx).other_end;
                             self.freelist(other_end).other_end = left;
                             self.freelist(left).other_end = other_end;
-                            self.freelist(left).next = self.freelist(idx).next;
-                            self.freelist(left).prev = self.freelist(idx).prev;
                         }
                         (false, true) => {
                             // oxv -- Left side is occupied, right is vacant.
