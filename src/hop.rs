@@ -543,9 +543,9 @@ impl<K: Key, V> HopSlotMap<K, V> {
                 };
                 if end_of_vacant_block < cur {
                     core::mem::swap(&mut cur, &mut end_of_vacant_block);
-                    assert!(idx <= end_of_vacant_block);
                 }
-                if idx <= end_of_vacant_block {
+                // if the index is within this vacant block
+                if idx >= cur && idx <= end_of_vacant_block {
                     let left_vacant = !self.slots.get_unchecked(idx - 1).occupied();
                     let right_vacant = self.slots.get(idx + 1).map_or(false, |s| !s.occupied());
                     let idx = idx as u32;
