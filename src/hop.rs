@@ -609,7 +609,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                         "idx {} left_vacant {} right_vacant {}",
                         idx, left_vacant, right_vacant
                     );
-                    self.validate_freelist_invariants(idx);
+                    self.validate_freelist_invariants(idx, left_vacant, right_vacant);
                     return;
                 } else {
                     cur = self.freelist(cur as u32).next as usize;
@@ -691,7 +691,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                 self.freelist(back).other_end = front;
             }
         }
-        self.validate_freelist_invariants(i);
+        self.validate_freelist_invariants(i, left_vacant, right_vacant);
     }
 
     /// Removes a key from the slot map, returning the value at the key if the
@@ -1138,7 +1138,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
             inner: self.iter_mut(),
         }
     }
-    fn validate_freelist_invariants(&self, idx: u32) {
+    fn validate_freelist_invariants(&self, idx: u32, left_vacant: bool, right_vacant: bool) {
         let mut iter = 0;
         #[derive(Copy, Clone, Debug)]
         struct Block {
@@ -1274,6 +1274,10 @@ impl<K: Key, V> HopSlotMap<K, V> {
                 // );
             }
         }
+        println!(
+            "idx {} left_vacant {} right_vacant {}",
+            idx, left_vacant, right_vacant
+        );
     }
 }
 
