@@ -573,7 +573,9 @@ impl<K: Key, V> HopSlotMap<K, V> {
                             let left = idx - 1;
                             let right = idx + 1;
                             // Update the first entry of the block to the right of us to point to the other_end and to the block to the left of us
-                            self.freelist(right).next = self.freelist(cur).next;
+                            let right_next = self.freelist(cur).next;
+                            self.freelist(right).next = right_next;
+                            self.freelist(right_next).prev = right; // update next's prev pointer
                             self.freelist(right).other_end = self.freelist(cur).other_end;
                             self.freelist(right).prev = cur;
                             // Update other_end of the left block
