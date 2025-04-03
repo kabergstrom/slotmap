@@ -496,7 +496,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     #[doc(hidden)]
     pub fn get_slot_version(&mut self, idx: u32) -> Option<u32> {
         unsafe {
-            if idx >= self.slots.len() {
+            if idx as usize >= self.slots.len() {
                 return None;
             }
             let slot = self.slots.get_unchecked(idx as usize);
