@@ -451,8 +451,8 @@ impl<K: Key, V> HopSlotMap<K, V> {
             let back = self.freelist(front).other_end;
             let slot_idx = back as usize;
 
-            // Freelist is empty.
-            if slot_idx == 0 {
+            // Freelist is empty or we haven't used all our capacity yet.
+            if slot_idx == 0 || self.slots.len() < self.capacity() {
                 let version = 1;
                 let key = KeyData::new(self.slots.len() as u32, version).into();
 
