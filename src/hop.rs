@@ -617,7 +617,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
                     self.validate_freelist_invariants(idx);
                     return;
                 } else {
-                    cur = self.freelist(end_of_vacant_block as u32).next as usize;
+                    cur = self.freelist(cur as u32).next as usize;
                 }
             }
             assert!(false, "should never get here");
